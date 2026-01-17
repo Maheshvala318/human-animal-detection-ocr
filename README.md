@@ -1,4 +1,12 @@
-## Model Selection and Justification
+# Part A: Human & Animal Detection
+
+This module focuses on detecting and classifying humans and animals in images or video frames under offline and real-world conditions. It uses a two-stage pipeline where an object detection model first localizes entities in the scene, and a separate classification model then determines whether each detected region corresponds to a human or an animal.
+
+The design is intended to handle practical challenges such as background clutter, scale variation, and partial occlusions. By separating detection and classification, the system remains flexible and robust, making it suitable for surveillance, monitoring, and other industrial or restricted-network environments where reliable offline inference is required.
+
+---
+
+# Model Selection and Justification
 
 ### Object Detection Model
 A pre-trained **Faster R-CNN with ResNet50-FPN backbone** was selected for object detection.
