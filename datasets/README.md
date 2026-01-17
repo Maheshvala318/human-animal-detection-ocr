@@ -17,15 +17,6 @@ They can be downloaded directly from Kaggle using the links below.
 - Description: Contains multiple animal categories across varied environments.
 - Usage: Used to train and evaluate the animal class in the classification model.
 
-## Task B: Offline OCR
-- **ICDAR 2015 Scene Text Dataset**
-- Link: https://www.kaggle.com/datasets/shravankumar9892/icdar-2015
-- Description: Scene text images with low contrast and noise, suitable for industrial OCR scenarios.
-
-## Notes
-- All datasets are used in an offline manner.
-- Only file paths are indexed during training to avoid data duplication.
-- Datasets such as COCO and ImageNet were intentionally avoided as per assignment requirements.
 
 ## Task B: Offline OCR Dataset
 
