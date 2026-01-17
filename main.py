@@ -1,188 +1,118 @@
 """
-Human vs Animal Detection & Classification
------------------------------------------
-
-This script contains:
-1. Dataset preparation and training code (Kaggle-only, disabled by default)
-2. Object detection using Faster R-CNN
-3. Human/Animal classification using ResNet18
-4. Offline inference on images
-
-Training was performed in a Kaggle environment due to dataset size and GPU needs.
-The default execution mode is inference only.
+Offline Industrial AI Suite: Part A (Detection) & Part B (OCR)
+------------------------------------------------------------
+Status: Production-Ready Pipeline
+Constraints: Offline execution, No YOLO, No Cloud APIs.
 """
 
 import os
-import random
-import torch
 import cv2
+import torch
 import numpy as np
+import pytesseract
 import matplotlib.pyplot as plt
-
 from PIL import Image
-from sklearn.model_selection import train_test_split
-from torch.utils.data import Dataset, DataLoader, ConcatDataset
-from torchvision import transforms
-import torchvision.models as models
+from torchvision import transforms, models
 import torch.nn as nn
-import torch.optim as optim
 from torchvision.models.detection import fasterrcnn_resnet50_fpn
 
-
 # --------------------------------------------------
-# DEVICE (SAFE FOR ALL MACHINES)
+# 1. GLOBAL CONFIGURATION & DEVICE SETUP
 # --------------------------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Using device:", device)
-
-
-# --------------------------------------------------
-# DATASET UTILITIES (USED DURING TRAINING)
-# --------------------------------------------------
-def balanced_random_sample(root_dir, max_images=5000, per_folder_limit=100, seed=42):
-    random.seed(seed)
-    collected = []
-
-    for root, _, files in os.walk(root_dir):
-        imgs = [
-            os.path.join(root, f)
-            for f in files
-            if f.lower().endswith((".jpg", ".png", ".jpeg"))
-        ]
-        if imgs:
-            random.shuffle(imgs)
-            collected.extend(imgs[:per_folder_limit])
-
-    random.shuffle(collected)
-    return collected[:max_images]
-
-
-class HumanAnimalDataset(Dataset):
-    def __init__(self, image_paths, label, transform=None):
-        self.image_paths = image_paths
-        self.label = label
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, idx):
-        img = Image.open(self.image_paths[idx]).convert("RGB")
-        if self.transform:
-            img = self.transform(img)
-        return img, self.label
-
+image_path = "test_images/test1.jpeg" 
+MODEL_PATH = "models/classifier.pth"
 
 # --------------------------------------------------
-# TRANSFORMS
+# 2. PART B: OFFLINE OCR PIPELINE (STENCILED TEXT)
 # --------------------------------------------------
+def run_industrial_ocr(img_path):
+    print("\n--- Starting Part B: Industrial OCR Pipeline ---")
+    
+    # Step 0: Image Loading
+    img = cv2.imread(img_path)
+    if img is None:
+        print(f"Error: {img_path} not found.")
+        return
+    
+    # Step 1: Grayscale Conversion
+    # Essential for reducing complexity before MSER
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Step 2: MSER (Maximally Stable Extremal Regions)
+    # Chosen for stenciled text because it handles disconnected character fragments well
+    mser = cv2.MSER_create()
+    mser.setMinArea(200)
+    mser.setMaxArea(8000)
+    regions, _ = mser.detectRegions(gray)
+
+    mask = np.zeros(gray.shape, dtype=np.uint8)
+    for region in regions:
+        hull = cv2.convexHull(region)
+        cv2.fillPoly(mask, [hull], 255)
+
+    # Step 3: Morphological Cleaning
+    # Closing gaps in stenciled characters to create solid bounding boxes
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+    clean = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+    # Step 4: Region Extraction
+    contours, _ = cv2.findContours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    boxes = []
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        if w > 30 and h > 15: # Noise filtering
+            boxes.append((x, y, w, h))
+
+    # Step 5: Offline Tesseract Inference
+    # Configured for industrial alphanumeric stencils
+    custom_config = r'--oem 3 --psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    results = []
+
+    for x, y, w, h in boxes:
+        crop = gray[y:y+h, x:x+w]
+        # Local preprocessing to improve OCR accuracy
+        crop = cv2.resize(crop, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        _, crop = cv2.threshold(crop, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        text = pytesseract.image_to_string(crop, config=custom_config)
+        if text.strip():
+            results.append(text.strip())
+    
+    print(f"OCR Results: {results}")
+    return results, gray, boxes
+
+# --------------------------------------------------
+# 3. PART A: DETECTION & CLASSIFICATION PIPELINE
+# --------------------------------------------------
+
+# Transforms
 classifier_transform = transforms.Compose([
     transforms.Resize((224, 224)),
-    transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
-    )
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
-
 detector_transform = transforms.ToTensor()
 
-
-# --------------------------------------------------
-# OBJECT DETECTION MODEL
-# --------------------------------------------------
-def load_detector():
+def load_models():
+    """Loads localization and classification models."""
+    print("Loading Detection Models to Device:", device)
+    # Stage 1: Detector (Faster R-CNN)
     detector = fasterrcnn_resnet50_fpn(pretrained=True)
-    detector.to(device)
-    detector.eval()
-    return detector
-
-
-# --------------------------------------------------
-# CLASSIFICATION MODEL
-# --------------------------------------------------
-def load_classifier(model_path="models/classifier.pth"):
+    detector.to(device).eval()
+    
+    # Stage 2: Classifier (ResNet18)
     classifier = models.resnet18(pretrained=False)
     classifier.fc = nn.Linear(classifier.fc.in_features, 2)
-    classifier.load_state_dict(torch.load(model_path, map_location=device))
-    classifier.to(device)
-    classifier.eval()
-    return classifier
+    if os.path.exists(MODEL_PATH):
+        classifier.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+    classifier.to(device).eval()
+    
+    return detector, classifier
 
-
-# --------------------------------------------------
-# TRAINING CODE (KAGGLE-ONLY, DISABLED BY DEFAULT)
-# --------------------------------------------------
-RUN_TRAINING = False  # ⚠️ KEEP FALSE FOR GITHUB SUBMISSION
-
-if RUN_TRAINING:
-    human_imgs = balanced_random_sample(
-        "/kaggle/input/aisegmentcom-matting-human-datasets",
-        max_images=5000,
-        per_folder_limit=50
-    )
-
-    animal_imgs = balanced_random_sample(
-        "/kaggle/input/animals-detection-images-dataset",
-        max_images=5000,
-        per_folder_limit=50
-    )
-
-    human_train, human_test = train_test_split(human_imgs, test_size=0.2)
-    animal_train, animal_test = train_test_split(animal_imgs, test_size=0.2)
-
-    train_dataset = ConcatDataset([
-        HumanAnimalDataset(human_train, 1, classifier_transform),
-        HumanAnimalDataset(animal_train, 0, classifier_transform)
-    ])
-
-    test_dataset = ConcatDataset([
-        HumanAnimalDataset(human_test, 1, classifier_transform),
-        HumanAnimalDataset(animal_test, 0, classifier_transform)
-    ])
-
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=2)
-
-    classifier = models.resnet18(pretrained=True)
-    classifier.fc = nn.Linear(classifier.fc.in_features, 2)
-    classifier.to(device)
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(classifier.parameters(), lr=1e-4)
-
-    for epoch in range(5):
-        classifier.train()
-        correct, total = 0, 0
-
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
-
-            optimizer.zero_grad()
-            outputs = classifier(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-            preds = torch.argmax(outputs, dim=1)
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
-
-        print(f"Epoch {epoch+1} Accuracy:", correct / total)
-
-    torch.save(classifier.state_dict(), "models/classifier.pth")
-    print("Classifier saved to models/classifier.pth")
-
-
-# --------------------------------------------------
-# INFERENCE PIPELINE (DEFAULT EXECUTION)
-# --------------------------------------------------
-def run_image_inference(image_path):
-    detector = load_detector()
-    classifier = load_classifier()
-
-    image = Image.open(image_path).convert("RGB")
+def run_detection_inference(img_path, detector, classifier):
+    print("\n--- Starting Part A: Human/Animal Detection Pipeline ---")
+    image = Image.open(img_path).convert("RGB")
     img_tensor = detector_transform(image).unsqueeze(0).to(device)
 
     with torch.no_grad():
@@ -190,46 +120,53 @@ def run_image_inference(image_path):
 
     boxes = detections["boxes"].cpu().numpy()
     scores = detections["scores"].cpu().numpy()
-
     img_np = np.array(image)
 
     for box, score in zip(boxes, scores):
-        if score < 0.6:
-            continue
+        if score < 0.6: continue
 
         x1, y1, x2, y2 = map(int, box.tolist())
         crop = image.crop((x1, y1, x2, y2))
         crop_tensor = classifier_transform(crop).unsqueeze(0).to(device)
 
         with torch.no_grad():
-            pred = torch.argmax(classifier(crop_tensor), dim=1).item()
+            output = classifier(crop_tensor)
+            pred = torch.argmax(output, dim=1).item()
 
         label = "Human" if pred == 1 else "Animal"
-
+        
+        # Visualization
         cv2.rectangle(img_np, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.putText(
-            img_np, label, (x1, y1 - 8),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2
-        )
-
-    plt.figure(figsize=(6, 6))
-    plt.imshow(img_np)
-    plt.axis("off")
-    plt.title("Detection + Classification Output")
-    plt.show()
-
+        cv2.putText(img_np, f"{label} {score:.2f}", (x1, y1 - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    
+    return img_np
 
 # --------------------------------------------------
-# MAIN ENTRY POINT
+# 4. MAIN EXECUTION ENTRY POINT
 # --------------------------------------------------
 def main():
-    # Example test image (replace with your own)
-    test_image_path = "test_images/sample.jpg"
-    if os.path.exists(test_image_path):
-        run_image_inference(test_image_path)
-    else:
-        print("No test image found. Please add one to test_images/.")
+    # Ensure directories exist
+    for d in ["outputs", "models", "test_images", "test_videos"]:
+        os.makedirs(d, exist_ok=True)
 
+    # 1. Run OCR (Part B)
+    ocr_texts, gray_img, ocr_boxes = run_industrial_ocr(image_path)
+
+    # 2. Run Detection (Part A)
+    det_model, cls_model = load_models()
+    processed_img = run_detection_inference(image_path, det_model, cls_model)
+
+    # 3. Final Visualization / Save
+    print("\nProcessing Complete. Saving to ./outputs/")
+    output_path = os.path.join("outputs", "final_result.jpg")
+    cv2.imwrite(output_path, cv2.cvtColor(processed_img, cv2.COLOR_RGB2BGR))
+    
+    plt.figure(figsize=(10,5))
+    plt.imshow(processed_img)
+    plt.title("Final Pipeline Output")
+    plt.axis("off")
+    plt.show()
 
 if __name__ == "__main__":
     main()

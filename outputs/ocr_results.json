@@ -1,0 +1,51 @@
+{
+    "image": "test1.jpeg",
+    "engine": "Offline MSER + Tesseract",
+    "detected_text": [
+        {
+            "text": "AD",
+            "bounding_box": [
+                239,
+                333,
+                35,
+                27
+            ]
+        },
+        {
+            "text": "PT",
+            "bounding_box": [
+                305,
+                312,
+                42,
+                31
+            ]
+        },
+        {
+            "text": "4TH",
+            "bounding_box": [
+                246,
+                296,
+                59,
+                36
+            ]
+        },
+        {
+            "text": "E",
+            "bounding_box": [
+                360,
+                272,
+                42,
+                56
+            ]
+        },
+        {
+            "text": "Q",
+            "bounding_box": [
+                52,
+                255,
+                42,
+                37
+            ]
+        }
+    ]
+}

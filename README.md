@@ -26,6 +26,62 @@ A **ResNet18-based classifier** was used to classify detected objects as *Human*
 
 ---
 
+# Part B: Offline Industrial OCR for Stenciled Text
+
+This module is designed to extract alphanumeric markings from industrial surfaces, such as shipping containers, military crates, and machinery. It specifically addresses the challenges of "stenciled" fonts, where characters are naturally fragmented, and surfaces may be damaged or faded.
+
+---
+
+## 1. Technical Justification & Approach
+
+### The Problem
+Traditional OCR engines often fail on industrial stencils because:
+1. **Character Fragmentation:** Stencil "bridges" (gaps in letters like B, O, or A) cause characters to be seen as multiple unrelated blobs.
+2. **Low Contrast:** Paint fades over time, blending with the background.
+3. **Surface Noise:** Rust, scratches, and dirt can be mistaken for text.
+
+### Our Solution: MSER + Morphological Refinement
+To overcome this, we implemented a custom computer vision pipeline before passing data to the OCR engine.
+
+* **MSER (Maximally Stable Extremal Regions):** * **Why:** Unlike standard thresholding, MSER detects regions that stay stable across a range of thresholds. This makes it highly robust to varying lighting and faded paint.
+* **Convex Hull & Poly-filling:**
+    * **Why:** To "heal" stenciled characters, we calculate the convex hull of detected MSER regions. This closes the gaps (bridges) in the stencil, creating a solid character shape.
+* **Morphological Closing:**
+    * **Why:** A $3 \times 3$ kernel is used to unify nearby fragments, ensuring that an entire line of text is grouped into a single bounding box rather than individual letter boxes.
+
+
+
+---
+
+## 2. OCR Pipeline Steps
+
+The system processes the input in the following sequence:
+
+1.  **Grayscale Conversion:** Reduces the 3-channel BGR input to a single luminance channel to simplify feature detection.
+2.  **MSER Region Detection:** Identifies stable intensity blobs likely to be text.
+3.  **Mask Generation:** Convex hulls are drawn and filled to create a binary "text map."
+4.  **Cleaning:** Morphological closing removes salt-and-pepper noise and bridges gaps.
+5.  **Targeted Pre-processing:**
+    * **Cubic Upsampling:** Crops are resized by $2\times$ to improve character edge definition.
+    * **Otsu Binarization:** Calculates an optimal local threshold for each specific text region.
+6.  **Offline Inference:** Tesseract 5.0 processes the cleaned crops using a whitelist (`A-Z, 0-9`) to prevent hallucinations from surface damage.
+
+---
+
+## 3. Installation & Requirements
+
+### System Requirements
+* **Python 3.8+**
+* **Tesseract OCR Engine:** This is required for the offline extraction.
+    * **Ubuntu:** `sudo apt install tesseract-ocr`
+    * **Windows:** Install the Tesseract binary and add the installation folder to your `PATH`.
+
+### Python Dependencies
+Install the required libraries via the provided `requirements.txt`:
+
+```bash
+pip install opencv-python numpy pytesseract matplotlib
+
 ## Installation & Requirements
 
 All required Python dependencies are listed in the `requirements.txt` file.

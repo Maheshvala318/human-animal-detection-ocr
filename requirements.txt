@@ -6,3 +6,6 @@ Pillow
 matplotlib
 scikit-learn
 streamlit
+torch
+torchvision
+pytesseract

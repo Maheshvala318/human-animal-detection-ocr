@@ -26,3 +26,28 @@ They can be downloaded directly from Kaggle using the links below.
 - All datasets are used in an offline manner.
 - Only file paths are indexed during training to avoid data duplication.
 - Datasets such as COCO and ImageNet were intentionally avoided as per assignment requirements.
+
+## Task B: Offline OCR Dataset
+
+No training dataset was required for Task B.
+
+The OCR system operates using a pre-trained offline OCR engine and is designed
+to work directly on industrial or military-style images containing stenciled or
+painted text.
+
+### Evaluation Images
+- A small set of example images depicting industrial/military boxes
+- Characteristics:
+  - Faded paint
+  - Low contrast
+  - Surface damage
+  - Stenciled alphanumeric text
+
+### Dataset Usage (Task B)
+
+Task B does not involve training a new OCR model.
+Instead, a pre-trained offline OCR engine is used in combination with
+custom image preprocessing.
+
+A small set of industrial-style example images was used for testing
+and validation of the OCR pipeline.
