@@ -25,3 +25,11 @@ A **ResNet18-based classifier** was used to classify detected objects as *Human*
 - Widely adopted in production systems
 
 ---
+
+## Installation & Requirements
+
+All required Python dependencies are listed in the `requirements.txt` file.
+
+### Install dependencies
+```bash
+pip install -r requirements.txt
